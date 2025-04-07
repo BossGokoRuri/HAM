@@ -90,7 +90,10 @@
     <button class="next-btn" id="next-btn" style="display:none;">下一题</button>
   </div>
 
-  <script type="module">
+  <!-- ✅ 通过 script 标签加载题库 JS -->
+  <script src="题库/a-bank.js" id="bank-script" type="text/javascript"></script>
+  
+  <script>
     const questionEl = document.getElementById('question');
     const optionsEl = document.getElementById('options');
     const answerContainerEl = document.getElementById('answer-container');
@@ -106,20 +109,17 @@
     let selectedOption = null;
 
     async function loadBank(type) {
-      let module;
-      const path = `./题库/${type}-bank.js`;
-      try {
-        module = await import(path);
-      } catch (e) {
-        questionEl.textContent = `无法加载 ${type.toUpperCase()} 类题库`;
-        return;
-      }
+      const bankScript = document.getElementById('bank-script');
+      
+      // 根据选择的题库更换脚本
+      bankScript.src = `题库/${type}-bank.js`;  // 动态更改脚本路径
 
-      let raw = module[`${type}Bank`];
-      questions = parseQuestionBank(raw);
-      questions = shuffleArray(questions);
-      currentIndex = 0;
-      showQuestion(0);
+      bankScript.onload = () => {
+        questions = parseQuestionBank(window[`${type}Bank`]);
+        questions = shuffleArray(questions);
+        currentIndex = 0;
+        showQuestion(0);
+      };
     }
 
     bankSelect.addEventListener('change', () => {
@@ -210,6 +210,8 @@
     function shuffleArray(arr) {
       return arr.sort(() => Math.random() - 0.5);
     }
+
+    loadBank('a'); // 默认加载 A 类题库
   </script>
 </body>
 </html>
