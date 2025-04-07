@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>业余无线电考试题库</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .question-container {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .options {
+            margin-top: 15px;
+        }
+        .option {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .option:hover {
+            background-color: #e9e9e9;
+        }
+        .option.selected {
+            background-color: #d4e6f1;
+        }
+        .correct {
+            background-color: #d4edda;
+        }
+        .incorrect {
+            background-color: #f8d7da;
+        }
+        .answer-container {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .next-btn {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .next-btn:hover {
+            background-color: #0069d9;
+        }
+        .progress {
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+        .category-selector {
+            margin-bottom: 20px;
+        }
+        select, button {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0,0,0,.3);
+            border-radius: 50%;
+            border-top-color: #007bff;
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>业余无线电考试题库</h1>
+    
+    <div class="category-selector">
+        <label for="category">选择题库类别：</label>
+        <select id="category">
+            <option value="A类题库(v20211022).txt">A类题库</option>
+            <option value="B类题库(v20211022).txt">B类题库</option>
+            <option value="C类题库(v20211022).txt">C类题库</option>
+        </select>
+        <button id="load-btn">加载题库</button>
+        <span id="loading" class="loading" style="display: none;"></span>
+        <div id="error" class="error"></div>
+    </div>
+    
+    <div class="progress">
+        题目进度: <span id="current">0</span> / <span id="total">0</span>
+    </div>
+    
+    <div class="question-container">
+        <div id="question">请先选择题库类别并加载题目</div>
+        <div class="options" id="options">
+            <!-- 选项将通过JavaScript动态生成 -->
+        </div>
+        <div class="answer-container" id="answer-container">
+            <strong>正确答案：</strong><span id="correct-answer"></span>
+            <p id="answer-explanation"></p>
+        </div>
+        <button class="next-btn" id="next-btn" style="display: none;">下一题</button>
+    </div>
+
+    <script>
+        // 当前状态
+        let currentQuestions = [];
+        let currentIndex = 0;
+        let selectedOption = null;
+        
+        // DOM元素
+        const questionEl = document.getElementById('question');
+        const optionsEl = document.getElementById('options');
+        const answerContainerEl = document.getElementById('answer-container');
+        const correctAnswerEl = document.getElementById('correct-answer');
+        const answerExplanationEl = document.getElementById('answer-explanation');
+        const nextBtn = document.getElementById('next-btn');
+        const currentEl = document.getElementById('current');
+        const totalEl = document.getElementById('total');
+        const categorySelect = document.getElementById('category');
+        const loadBtn = document.getElementById('load-btn');
+        const loadingEl = document.getElementById('loading');
+        const errorEl = document.getElementById('error');
+        
+        // 解析题库文本
+        function parseQuestionBank(text) {
+            const questions = [];
+            const questionBlocks = text.split('[I]').filter(block => block.trim());
+            
+            questionBlocks.forEach(block => {
+                const lines = block.split('\n').filter(line => line.trim());
+                if (lines.length < 3) return;
+                
+                const id = lines[0].trim();
+                const question = lines[1].replace('[Q]', '').trim();
+                
+                const options = {};
+                let answer = '';
+                let hasP = false;
+                
+                for (let i = 2; i < lines.length; i++) {
+                    if (lines[i].startsWith('[A]')) {
+                        options['A'] = lines[i].replace('[A]', '').trim();
+                    } else if (lines[i].startsWith('[B]')) {
+                        options['B'] = lines[i].replace('[B]', '').trim();
+                    } else if (lines[i].startsWith('[C]')) {
+                        options['C'] = lines[i].replace('[C]', '').trim();
+                    } else if (lines[i].startsWith('[D]')) {
+                        options['D'] = lines[i].replace('[D]', '').trim();
+                    } else if (lines[i].startsWith('[P]')) {
+                        hasP = true;
+                    }
+                }
+                
+                // 默认A为正确答案
+                answer = 'A';
+                
+                questions.push({
+                    id,
+                    question,
+                    options,
+                    answer,
+                    hasExplanation: hasP
+                });
+            });
+            
+            return questions;
+        }
+        
+        // 从服务器加载题库文件
+        async function loadQuestionBank(filename) {
+            try {
+                loadingEl.style.display = 'inline-block';
+                errorEl.textContent = '';
+                
+                const response = await fetch(filename);
+                if (!response.ok) {
+                    throw new Error(`加载失败: ${response.status} ${response.statusText}`);
+                }
+                
+                const text = await response.text();
+                return parseQuestionBank(text);
+            } catch (error) {
+                errorEl.textContent = `加载题库出错: ${error.message}`;
+                return [];
+            } finally {
+                loadingEl.style.display = 'none';
+            }
+        }
+        
+        // 显示题目
+        function showQuestion(index) {
+            if (index >= currentQuestions.length) {
+                questionEl.textContent = '题库已全部完成！';
+                optionsEl.innerHTML = '';
+                answerContainerEl.style.display = 'none';
+                nextBtn.style.display = 'none';
+                return;
+            }
+            
+            const question = currentQuestions[index];
+            questionEl.textContent = `${question.id}. ${question.question}`;
+            
+            optionsEl.innerHTML = '';
+            Object.keys(question.options).forEach(key => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'option';
+                optionDiv.dataset.option = key;
+                optionDiv.textContent = `${key}. ${question.options[key]}`;
+                optionDiv.addEventListener('click', () => selectOption(key));
+                optionsEl.appendChild(optionDiv);
+            });
+            
+            answerContainerEl.style.display = 'none';
+            nextBtn.style.display = 'none';
+            selectedOption = null;
+            
+            // 更新进度
+            currentEl.textContent = index + 1;
+            totalEl.textContent = currentQuestions.length;
+        }
+        
+        // 选择选项
+        function selectOption(option) {
+            if (selectedOption) return;
+            
+            selectedOption = option;
+            const question = currentQuestions[currentIndex];
+            
+            // 高亮选中的选项
+            document.querySelectorAll('.option').forEach(el => {
+                el.classList.remove('selected');
+                if (el.dataset.option === option) {
+                    el.classList.add('selected');
+                    
+                    // 标记正确/错误
+                    if (option === question.answer) {
+                        el.classList.add('correct');
+                    } else {
+                        el.classList.add('incorrect');
+                    }
+                }
+                
+                // 显示正确答案
+                if (el.dataset.option === question.answer) {
+                    el.classList.add('correct');
+                }
+            });
+            
+            // 显示答案和解释
+            correctAnswerEl.textContent = `${question.answer}. ${question.options[question.answer]}`;
+            answerExplanationEl.textContent = question.hasExplanation ? '本题有解析' : '本题暂无解析';
+            answerContainerEl.style.display = 'block';
+            nextBtn.style.display = 'inline-block';
+        }
+        
+        // 下一题
+        function nextQuestion() {
+            currentIndex++;
+            showQuestion(currentIndex);
+        }
+        
+        // 加载题库
+        async function loadSelectedBank() {
+            const filename = categorySelect.value;
+            currentQuestions = await loadQuestionBank(filename);
+            
+            if (currentQuestions.length > 0) {
+                // 随机打乱题目顺序
+                currentQuestions = shuffleArray(currentQuestions);
+                currentIndex = 0;
+                showQuestion(currentIndex);
+            }
+        }
+        
+        // 随机打乱数组
+        function shuffleArray(array) {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        }
+        
+        // 事件监听
+        nextBtn.addEventListener('click', nextQuestion);
+        loadBtn.addEventListener('click', loadSelectedBank);
+    </script>
+</body>
+</html>
